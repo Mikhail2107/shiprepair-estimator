@@ -1,4 +1,4 @@
-import React from 'react';
+import React, {useState} from 'react';
 import { Card, Row, Col, Statistic, Button } from 'antd';
 import {
   FileImageOutlined,
@@ -7,19 +7,39 @@ import {
   ClockCircleOutlined,
   CameraOutlined
 } from '@ant-design/icons';
+import ImageUpload from '../image-upload/components/ImageUpload';
 
 const Dashboard: React.FC = () => {
+  const [showUpload, setShowUpload] = useState(false);
   const recentAnalyses = [
     { id: 1, date: '2024-01-15', defect: 'Коррозия язвенная', ship: 'Судно-01' },
     { id: 2, date: '2024-01-14', defect: 'Трещина поверхностная', ship: 'Судно-02' },
     { id: 3, date: '2024-01-13', defect: 'Деформация вмятина', ship: 'Судно-01' },
   ];
 
+  if (showUpload) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h1 className="text-2xl font-bold">Новый анализ дефекта</h1>
+          <Button onClick={() => setShowUpload(false)}>
+            Вернуться на главную
+          </Button>
+        </div>
+        <ImageUpload />
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h1 className="text-2xl font-bold">Главная панель</h1>
-        <Button type="primary" size="large" className="bg-blue-600">
+        <Button 
+          type="primary" 
+          size="large" 
+          className="bg-blue-600"
+          onClick={() => setShowUpload(true)}>
           Начать новый анализ
         </Button>
       </div>
