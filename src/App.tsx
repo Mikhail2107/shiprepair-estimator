@@ -1,17 +1,17 @@
-// import { useState } from 'react'
-
-import './App.css'
+import React from 'react';
+import { Provider } from 'react-redux';
+import { store } from './app/store';
+import MainLayout from './shared/ui/Layout/MainLayout';
+import Dashboard from './features/dashboard/Dashboard';
 
 function App() {
-  // const [count, setCount] = useState(0)
-
   return (
-    <>
-      
-       
-      
-    </>
-  )
+    <Provider store={store}>
+      <MainLayout>
+        <Dashboard />
+      </MainLayout>
+    </Provider>
+  );
 }
 
-export default App
+export default App;
