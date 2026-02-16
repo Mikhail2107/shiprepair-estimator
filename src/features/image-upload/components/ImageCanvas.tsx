@@ -1,25 +1,36 @@
+// src/features/image-upload/components/ImageCanvas.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { fabric } from 'fabric';
-import { Slider, Space, Tooltip, Button, message } from 'antd';
-import { ZoomInOutlined, ZoomOutOutlined, ReloadOutlined, UserOutlined } from '@ant-design/icons';
+import { Slider, Space, Tooltip, Button, message, Modal } from 'antd';
+import { 
+  ZoomInOutlined, 
+  ZoomOutOutlined, 
+  ReloadOutlined, 
+  UserOutlined,
+  SaveOutlined 
+} from '@ant-design/icons';
+import MeasurementTools from './MeasurementTools';
 
 interface ImageCanvasProps {
   imageUrl: string;
   onCalibrate?: (pxPerMm: number) => void;
+  onSave?: () => void;
 }
 
-const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
+const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvas, setCanvas] = useState<fabric.Canvas | null>(null);
   const [zoom, setZoom] = useState(1);
   const [isCalibrating, setIsCalibrating] = useState(false);
-  const [calibrationPoints, setCalibrationPoints] = useState<fabric.Line[]>([]);
+  const [calibrationPoints, setCalibrationPoints] = useState<fabric.Object[]>([]);
+  const [pxPerMm, setPxPerMm] = useState<number | null>(null);
+  const [showCalibrationHelp, setShowCalibrationHelp] = useState(false);
 
   useEffect(() => {
     if (canvasRef.current) {
       // Инициализация Fabric canvas
       const fabricCanvas = new fabric.Canvas(canvasRef.current, {
-        width: 800,
+        width: 900,
         height: 600,
         backgroundColor: '#f5f5f5',
       });
@@ -48,6 +59,9 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
         fabricCanvas.add(img);
         fabricCanvas.sendToBack(img);
         fabricCanvas.renderAll();
+
+        // Показываем подсказку по калибровке
+        setShowCalibrationHelp(true);
       });
 
       return () => {
@@ -82,7 +96,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
     }
   };
 
-  // Функция для калибровки по линейке
+  // Калибровка по линейке
   const startCalibration = () => {
     if (!canvas) return;
     
@@ -93,7 +107,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
     calibrationPoints.forEach(point => canvas.remove(point));
     setCalibrationPoints([]);
     
-    let points: { x: number; y: number }[] = [];
+    const points: { x: number; y: number }[] = [];
     
     const handleMouseDown = (opt: fabric.IEvent) => {
       if (!isCalibrating) return;
@@ -107,7 +121,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
         left: x - 5,
         top: y - 5,
         radius: 5,
-        fill: 'red',
+        fill: '#2563eb',
         stroke: 'white',
         strokeWidth: 2,
         selectable: false,
@@ -116,11 +130,12 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
       
       canvas.add(circle);
       points.push({ x, y });
+      setCalibrationPoints([...calibrationPoints, circle]);
       
       // Если выбраны две точки - рисуем линию и вычисляем масштаб
       if (points.length === 2) {
         const line = new fabric.Line([points[0].x, points[0].y, points[1].x, points[1].y], {
-          stroke: 'green',
+          stroke: '#16a34a',
           strokeWidth: 3,
           strokeDashArray: [5, 5],
           selectable: false,
@@ -136,33 +151,33 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
         );
         
         // Предполагаем, что линейка 10 см = 100 мм
-        const pxPerMm = distance / 100;
+        const calculatedPxPerMm = distance / 100;
+        setPxPerMm(calculatedPxPerMm);
         
         // Добавляем текст с результатом
-        const text = new fabric.Text(`Масштаб: ${pxPerMm.toFixed(2)} px/мм`, {
+        const text = new fabric.Text(`Масштаб: ${calculatedPxPerMm.toFixed(2)} px/мм`, {
           left: points[1].x + 10,
           top: points[1].y - 30,
-          fontSize: 14,
-          fill: 'green',
+          fontSize: 16,
+          fill: '#16a34a',
           backgroundColor: 'white',
+          padding: 4,
           selectable: false,
           evented: false,
         });
         
         canvas.add(text);
-        
-        setCalibrationPoints([...calibrationPoints, line, text as never]);
+        setCalibrationPoints([...calibrationPoints, line, text]);
         
         // Вызываем callback с результатом
         if (onCalibrate) {
-          onCalibrate(pxPerMm);
+          onCalibrate(calculatedPxPerMm);
         }
         
-        message.success(`Калибровка выполнена: ${pxPerMm.toFixed(2)} px/мм`);
+        message.success(`Калибровка выполнена: ${calculatedPxPerMm.toFixed(2)} px/мм`);
         
         // Завершаем режим калибровки
         setIsCalibrating(false);
-        points = [];
         
         // Удаляем временные обработчики
         canvas.off('mouse:down', handleMouseDown);
@@ -184,8 +199,41 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
     message.info('Калибровка отменена');
   };
 
+  const handleSave = () => {
+    if (onSave) {
+      onSave();
+    } else {
+      message.success('Измерения сохранены');
+    }
+  };
+
   return (
     <div className="space-y-4">
+      {/* Модальное окно с подсказкой */}
+      <Modal
+        title="Калибровка изображения"
+        open={showCalibrationHelp}
+        onOk={() => setShowCalibrationHelp(false)}
+        onCancel={() => setShowCalibrationHelp(false)}
+        okText="Понятно"
+        cancelText="Закрыть"
+      >
+        <div className="space-y-3">
+          <p>Для точных измерений необходимо откалибровать изображение:</p>
+          <ol className="list-decimal list-inside space-y-2">
+            <li>Нажмите кнопку <strong>"Калибровка по линейке"</strong></li>
+            <li>Кликните на <strong>начало</strong> линейки (0 см)</li>
+            <li>Кликните на <strong>конец</strong> линейки (10 см)</li>
+            <li>Система автоматически рассчитает масштаб</li>
+          </ol>
+          <div className="bg-yellow-50 p-3 rounded mt-3">
+            <p className="text-yellow-800 text-sm">
+              ⚡ Важно: Используйте линейку длиной 10 см для наилучшей точности
+            </p>
+          </div>
+        </div>
+      </Modal>
+
       <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
         <canvas ref={canvasRef} />
       </div>
@@ -221,7 +269,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
           {isCalibrating ? (
             <>
               <Button
-                // type="primary"
+                type="primary"
                 danger
                 onClick={cancelCalibration}
               >
@@ -233,13 +281,22 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
             </>
           ) : (
             <Button
-              // type="primary"
+              type={pxPerMm ? 'default' : 'primary'}
               icon={<UserOutlined />}
               onClick={startCalibration}
             >
-              Калибровка по линейке
+              {pxPerMm ? 'Перекалибровать' : 'Калибровка по линейке'}
             </Button>
           )}
+          
+          <Button
+            type="primary"
+            icon={<SaveOutlined />}
+            onClick={handleSave}
+            disabled={!pxPerMm}
+          >
+            Сохранить измерения
+          </Button>
         </Space>
       </div>
 
@@ -258,17 +315,17 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
           }}
         />
       </div>
-      
-      {/* Инструкция по калибровке */}
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-        <h4 className="font-medium text-blue-800 mb-2">Как калибровать:</h4>
-        <ol className="text-sm text-blue-700 list-decimal list-inside space-y-1">
-          <li>Нажмите кнопку "Калибровка по линейке"</li>
-          <li>Кликните на начало линейки (0 см)</li>
-          <li>Кликните на конец линейки (10 см)</li>
-          <li>Система автоматически рассчитает масштаб</li>
-        </ol>
-      </div>
+
+      {/* Инструменты измерения (появляются после калибровки) */}
+      {pxPerMm && canvas && (
+        <MeasurementTools
+          canvas={canvas}
+          pxPerMm={pxPerMm}
+          onMeasurementsChange={(measurements) => {
+            console.log('Measurements updated:', measurements);
+          }}
+        />
+      )}
     </div>
   );
 };
