@@ -221,7 +221,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
           {isCalibrating ? (
             <>
               <Button
-                type="primary"
+                // type="primary"
                 danger
                 onClick={cancelCalibration}
               >
