@@ -1,5 +1,5 @@
 // src/features/image-upload/components/MeasurementTools.tsx
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { Card, Button, Space, Tooltip, Badge, message } from 'antd';
 import {
@@ -11,15 +11,28 @@ import {
   CloseOutlined,
   LineOutlined
 } from '@ant-design/icons';
-import { MeasurementService, MeasurementPoint } from '../../../services/measurement/MeasurementService';
+import { MeasurementService } from '../../../services/measurement/MeasurementService';
+
+// Расширяем интерфейс Canvas для хранения обработчика
+interface ExtendedCanvas extends fabric.Canvas {
+  __rulerMouseMoveHandler?: (opt: fabric.IEvent) => void;
+}
 
 interface MeasurementToolsProps {
-  canvas: fabric.Canvas | null;
+  canvas: ExtendedCanvas | null;
   pxPerMm: number;
-  onMeasurementsChange?: (measurements: unknown[]) => void;
+  onMeasurementsChange?: (measurements: fabric.Object[]) => void;
 }
 
 type ToolType = 'ruler' | 'rectangle' | 'polygon' | 'circle' | 'none';
+
+// Типы для данных, хранящихся в fabric.Object
+interface MeasurementData {
+  type: 'point' | 'temp-line' | 'measurement' | 'measurement-label' | 'polygon-point' | 'closing-line';
+  tool: ToolType;
+  distancePx?: number;
+  distanceMm?: number;
+}
 
 const MeasurementTools: React.FC<MeasurementToolsProps> = ({
   canvas,
@@ -31,6 +44,14 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
   const [tempPoints, setTempPoints] = useState<fabric.Circle[]>([]);
   const [tempLine, setTempLine] = useState<fabric.Line | null>(null);
   const [measurementMode, setMeasurementMode] = useState(false);
+  
+  // Используем ref для хранения актуального значения tempPoints в замыканиях
+  const tempPointsRef = useRef<fabric.Circle[]>([]);
+  
+  // Обновляем ref при изменении tempPoints
+  useEffect(() => {
+    tempPointsRef.current = tempPoints;
+  }, [tempPoints]);
 
   // Цвета для разных типов измерений
   const toolColors = {
@@ -42,160 +63,14 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
 
   // Очистка обработчиков событий
   const cleanupRulerHandlers = () => {
-    if (canvas && (canvas as any).__rulerMouseMoveHandler) {
-      canvas.off('mouse:move', (canvas as any).__rulerMouseMoveHandler);
-      delete (canvas as any).__rulerMouseMoveHandler;
+    if (canvas?.__rulerMouseMoveHandler) {
+      canvas.off('mouse:move', canvas.__rulerMouseMoveHandler);
+      delete canvas.__rulerMouseMoveHandler;
     }
   };
 
-// Инструмент "Многоугольник" (для сложных дефектов)
-  const handlePolygonTool = (x: number, y: number) => {
-    if (!canvas) return;
-
-    const point = new fabric.Circle({
-      left: x - 3,
-      top: y - 3,
-      radius: 3,
-      fill: toolColors.polygon,
-      stroke: 'white',
-      strokeWidth: 1,
-      selectable: false,
-      evented: false,
-      data: { type: 'polygon-point', tool: 'polygon' }
-    });
-
-    canvas.add(point);
-    
-    // Если есть предыдущая точка, рисуем линию
-    if (tempPoints.length > 0) {
-      const prevPoint = tempPoints[tempPoints.length - 1];
-      const line = new fabric.Line([
-        prevPoint.left! + 3, prevPoint.top! + 3,
-        x, y
-      ], {
-        stroke: toolColors.polygon,
-        strokeWidth: 2,
-        strokeDashArray: [3, 3],
-        selectable: false,
-        evented: false,
-        data: { type: 'temp-line', tool: 'polygon' }
-      });
-      canvas.add(line);
-      setTempLine(line);
-    }
-    
-    setTempPoints([...tempPoints, point]);
-  };
-  
-  // Инструмент "Круг"
-  const handleCircleTool = (x: number, y: number) => {
-    if (!canvas) return;
-
-    // Создаем круг с радиусом 50px по умолчанию
-    const circle = new fabric.Circle({
-      left: x - 50,
-      top: y - 50,
-      radius: 50,
-      fill: 'transparent',
-      stroke: toolColors.circle,
-      strokeWidth: 2,
-      strokeDashArray: [5, 5],
-      selectable: true,
-      hasControls: true,
-      hasBorders: true,
-      cornerColor: toolColors.circle,
-      cornerSize: 8,
-      data: { type: 'measurement', tool: 'circle' }
-    });
-
-    canvas.add(circle);
-
-    // Вычисляем характеристики круга
-    const diameterPx = 100; // 2 * radius
-    const diameterMm = MeasurementService.pxToMm(diameterPx, pxPerMm);
-    const areaPx = Math.PI * 50 * 50;
-    const areaMm2 = areaPx / (pxPerMm * pxPerMm);
-
-    // Добавляем информацию
-    const text = new fabric.Text(
-      `⌀ ${diameterMm.toFixed(0)} мм | S: ${areaMm2.toFixed(0)} мм²`,
-      {
-        left: x + 20,
-        top: y - 30,
-        fontSize: 12,
-        fill: toolColors.circle,
-        backgroundColor: 'white',
-        padding: 4,
-        selectable: true,
-        data: { type: 'measurement-label', tool: 'circle' }
-      }
-    );
-
-    canvas.add(text);
-    setMeasurements([...measurements, circle, text]);
-
-    if (onMeasurementsChange) {
-      onMeasurementsChange([...measurements, circle, text]);
-    }
-    
-    message.success(`Круг создан: диаметр ${diameterMm.toFixed(0)} мм, площадь ${areaMm2.toFixed(0)} мм²`);
-  };
-
-  // Инструмент "Прямоугольник"
-  const handleRectangleTool = (x: number, y: number) => {
-    if (!canvas) return;
-
-    const rect = new fabric.Rect({
-      left: x - 50,
-      top: y - 30,
-      width: 100,
-      height: 60,
-      fill: 'transparent',
-      stroke: toolColors.rectangle,
-      strokeWidth: 2,
-      strokeDashArray: [5, 5],
-      selectable: true,
-      hasControls: true,
-      hasBorders: true,
-      cornerColor: toolColors.rectangle,
-      cornerSize: 8,
-      data: { type: 'measurement', tool: 'rectangle' }
-    });
-
-    canvas.add(rect);
-
-    // Вычисляем размеры
-    const widthInMm = MeasurementService.pxToMm(100, pxPerMm);
-    const heightInMm = MeasurementService.pxToMm(60, pxPerMm);
-    const areaMm2 = widthInMm * heightInMm;
-    
-    // Добавляем информацию
-    const text = new fabric.Text(
-      `${widthInMm.toFixed(0)}×${heightInMm.toFixed(0)} мм  |  S: ${areaMm2.toFixed(0)} мм²`,
-      {
-        left: x - 40,
-        top: y - 40,
-        fontSize: 12,
-        fill: toolColors.rectangle,
-        backgroundColor: 'white',
-        padding: 4,
-        selectable: true,
-        data: { type: 'measurement-label', tool: 'rectangle' }
-      }
-    );
-
-    canvas.add(text);
-    setMeasurements([...measurements, rect, text]);
-
-    if (onMeasurementsChange) {
-      onMeasurementsChange([...measurements, rect, text]);
-    }
-    
-    message.success(`Прямоугольник создан: ${widthInMm.toFixed(0)}×${heightInMm.toFixed(0)} мм`);
-  };
-
-  // Инструмент "Линейка" (исправленная версия)
-  function handleRulerTool (x: number, y: number) {
+  // Инструмент "Линейка"
+  const handleRulerTool = (x: number, y: number) => {
     if (!canvas) return;
 
     if (tempPoints.length === 0) {
@@ -209,7 +84,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         strokeWidth: 2,
         selectable: false,
         evented: false,
-        data: { type: 'point', tool: 'ruler' }
+        data: { type: 'point', tool: 'ruler' } as MeasurementData
       });
 
       canvas.add(point);
@@ -217,10 +92,10 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       
       // Создаем временную линию, которая будет следовать за курсором
       const handleMouseMove = (moveOpt: fabric.IEvent) => {
-        if (!canvas || tempPoints.length !== 1) return;
+        if (!canvas || tempPointsRef.current.length !== 1) return;
         
         const movePointer = canvas.getPointer(moveOpt.e);
-        const startPoint = tempPoints[0];
+        const startPoint = tempPointsRef.current[0];
         
         // Удаляем предыдущую временную линию
         if (tempLine) {
@@ -229,7 +104,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         
         // Создаем новую временную линию
         const newTempLine = new fabric.Line([
-          startPoint.left! + 4, startPoint.top! + 4,
+          (startPoint.left ?? 0) + 4, (startPoint.top ?? 0) + 4,
           movePointer.x, movePointer.y
         ], {
           stroke: toolColors.ruler,
@@ -237,7 +112,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
           strokeDashArray: [5, 5],
           selectable: false,
           evented: false,
-          data: { type: 'temp-line', tool: 'ruler' }
+          data: { type: 'temp-line', tool: 'ruler' } as MeasurementData
         });
         
         canvas.add(newTempLine);
@@ -246,9 +121,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       };
       
       canvas.on('mouse:move', handleMouseMove);
-      
-      // Сохраняем обработчик для последующего удаления
-      (canvas as any).__rulerMouseMoveHandler = handleMouseMove;
+      canvas.__rulerMouseMoveHandler = handleMouseMove;
       
     } else if (tempPoints.length === 1) {
       // Вторая точка - завершаем измерение
@@ -273,22 +146,22 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         strokeWidth: 2,
         selectable: false,
         evented: false,
-        data: { type: 'point', tool: 'ruler' }
+        data: { type: 'point', tool: 'ruler' } as MeasurementData
       });
       
       canvas.add(endPoint);
 
       // Вычисляем расстояние
       const distancePx = MeasurementService.calculateDistance(
-        { x: startPoint.left! + 4, y: startPoint.top! + 4 },
-        { x: endPoint.left! + 4, y: endPoint.top! + 4 }
+        { x: (startPoint.left ?? 0) + 4, y: (startPoint.top ?? 0) + 4 },
+        { x: (endPoint.left ?? 0) + 4, y: (endPoint.top ?? 0) + 4 }
       );
       const distanceMm = MeasurementService.pxToMm(distancePx, pxPerMm);
 
       // Создаем постоянную линию
       const finalLine = new fabric.Line([
-        startPoint.left! + 4, startPoint.top! + 4,
-        endPoint.left! + 4, endPoint.top! + 4
+        (startPoint.left ?? 0) + 4, (startPoint.top ?? 0) + 4,
+        (endPoint.left ?? 0) + 4, (endPoint.top ?? 0) + 4
       ], {
         stroke: toolColors.ruler,
         strokeWidth: 3,
@@ -299,12 +172,12 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
           tool: 'ruler',
           distancePx,
           distanceMm
-        }
+        } as MeasurementData
       });
 
       // Добавляем текст с расстоянием
-      const midX = (startPoint.left! + endPoint.left!) / 2 + 8;
-      const midY = (startPoint.top! + endPoint.top!) / 2 - 10;
+      const midX = ((startPoint.left ?? 0) + (endPoint.left ?? 0)) / 2 + 8;
+      const midY = ((startPoint.top ?? 0) + (endPoint.top ?? 0)) / 2 - 10;
       
       const text = new fabric.Text(`${distanceMm.toFixed(1)} мм`, {
         left: midX,
@@ -314,7 +187,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         backgroundColor: 'white',
         padding: 4,
         selectable: true,
-        data: { type: 'measurement-label', tool: 'ruler' }
+        data: { type: 'measurement-label', tool: 'ruler' } as MeasurementData
       });
 
       canvas.add(finalLine);
@@ -324,17 +197,168 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       canvas.remove(startPoint);
       canvas.remove(endPoint);
       
-      setMeasurements([...measurements, finalLine, text]);
+      const newMeasurements = [...measurements, finalLine, text];
+      setMeasurements(newMeasurements);
       setTempPoints([]);
       
       if (onMeasurementsChange) {
-        onMeasurementsChange([...measurements, finalLine, text]);
+        onMeasurementsChange(newMeasurements);
       }
       
       message.success(`Расстояние: ${distanceMm.toFixed(1)} мм`);
     }
   };
-  
+
+  // Инструмент "Прямоугольник"
+  const handleRectangleTool = (x: number, y: number) => {
+    if (!canvas) return;
+
+    const rect = new fabric.Rect({
+      left: x - 50,
+      top: y - 30,
+      width: 100,
+      height: 60,
+      fill: 'transparent',
+      stroke: toolColors.rectangle,
+      strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: true,
+      hasControls: true,
+      hasBorders: true,
+      cornerColor: toolColors.rectangle,
+      cornerSize: 8,
+      data: { type: 'measurement', tool: 'rectangle' } as MeasurementData
+    });
+
+    canvas.add(rect);
+
+    // Вычисляем размеры
+    const widthInMm = MeasurementService.pxToMm(100, pxPerMm);
+    const heightInMm = MeasurementService.pxToMm(60, pxPerMm);
+    const areaMm2 = widthInMm * heightInMm;
+    
+    // Добавляем информацию
+    const text = new fabric.Text(
+      `${widthInMm.toFixed(0)}×${heightInMm.toFixed(0)} мм  |  S: ${areaMm2.toFixed(0)} мм²`,
+      {
+        left: x - 40,
+        top: y - 40,
+        fontSize: 12,
+        fill: toolColors.rectangle,
+        backgroundColor: 'white',
+        padding: 4,
+        selectable: true,
+        data: { type: 'measurement-label', tool: 'rectangle' } as MeasurementData
+      }
+    );
+
+    canvas.add(text);
+    
+    const newMeasurements = [...measurements, rect, text];
+    setMeasurements(newMeasurements);
+
+    if (onMeasurementsChange) {
+      onMeasurementsChange(newMeasurements);
+    }
+    
+    message.success(`Прямоугольник создан: ${widthInMm.toFixed(0)}×${heightInMm.toFixed(0)} мм`);
+  };
+
+  // Инструмент "Многоугольник"
+  const handlePolygonTool = (x: number, y: number) => {
+    if (!canvas) return;
+
+    const point = new fabric.Circle({
+      left: x - 3,
+      top: y - 3,
+      radius: 3,
+      fill: toolColors.polygon,
+      stroke: 'white',
+      strokeWidth: 1,
+      selectable: false,
+      evented: false,
+      data: { type: 'polygon-point', tool: 'polygon' } as MeasurementData
+    });
+
+    canvas.add(point);
+    
+    // Если есть предыдущая точка, рисуем линию
+    if (tempPoints.length > 0) {
+      const prevPoint = tempPoints[tempPoints.length - 1];
+      const line = new fabric.Line([
+        (prevPoint.left ?? 0) + 3, (prevPoint.top ?? 0) + 3,
+        x, y
+      ], {
+        stroke: toolColors.polygon,
+        strokeWidth: 2,
+        strokeDashArray: [3, 3],
+        selectable: false,
+        evented: false,
+        data: { type: 'temp-line', tool: 'polygon' } as MeasurementData
+      });
+      canvas.add(line);
+      setTempLine(line);
+    }
+    
+    const newTempPoints = [...tempPoints, point];
+    setTempPoints(newTempPoints);
+  };
+
+  // Инструмент "Круг"
+  const handleCircleTool = (x: number, y: number) => {
+    if (!canvas) return;
+
+    const circle = new fabric.Circle({
+      left: x - 50,
+      top: y - 50,
+      radius: 50,
+      fill: 'transparent',
+      stroke: toolColors.circle,
+      strokeWidth: 2,
+      strokeDashArray: [5, 5],
+      selectable: true,
+      hasControls: true,
+      hasBorders: true,
+      cornerColor: toolColors.circle,
+      cornerSize: 8,
+      data: { type: 'measurement', tool: 'circle' } as MeasurementData
+    });
+
+    canvas.add(circle);
+
+    // Вычисляем характеристики круга
+    const diameterPx = 100;
+    const diameterMm = MeasurementService.pxToMm(diameterPx, pxPerMm);
+    const areaPx = Math.PI * 50 * 50;
+    const areaMm2 = areaPx / (pxPerMm * pxPerMm);
+
+    // Добавляем информацию
+    const text = new fabric.Text(
+      `⌀ ${diameterMm.toFixed(0)} мм | S: ${areaMm2.toFixed(0)} мм²`,
+      {
+        left: x + 20,
+        top: y - 30,
+        fontSize: 12,
+        fill: toolColors.circle,
+        backgroundColor: 'white',
+        padding: 4,
+        selectable: true,
+        data: { type: 'measurement-label', tool: 'circle' } as MeasurementData
+      }
+    );
+
+    canvas.add(text);
+    
+    const newMeasurements = [...measurements, circle, text];
+    setMeasurements(newMeasurements);
+
+    if (onMeasurementsChange) {
+      onMeasurementsChange(newMeasurements);
+    }
+    
+    message.success(`Круг создан: диаметр ${diameterMm.toFixed(0)} мм, площадь ${areaMm2.toFixed(0)} мм²`);
+  };
+
   useEffect(() => {
     if (!canvas) return;
 
@@ -368,12 +392,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       canvas.off('mouse:down', handleMouseDown);
       cleanupRulerHandlers();
     };
-  }, [canvas, measurementMode, activeTool, tempPoints, tempLine]);
-
-  
-
-
-  
+  }, [canvas, measurementMode, activeTool]);
 
   // Завершение многоугольника
   const completePolygon = () => {
@@ -388,11 +407,11 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
     }
 
     const points = tempPoints.map(p => ({
-      x: p.left! + 3,
-      y: p.top! + 3
+      x: (p.left ?? 0) + 3,
+      y: (p.top ?? 0) + 3
     }));
 
-    // Замыкаем многоугольник (добавляем линию от последней точки к первой)
+    // Замыкаем многоугольник
     const closingLine = new fabric.Line([
       points[points.length - 1].x, points[points.length - 1].y,
       points[0].x, points[0].y
@@ -402,7 +421,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       strokeDashArray: [3, 3],
       selectable: false,
       evented: false,
-      data: { type: 'closing-line', tool: 'polygon' }
+      data: { type: 'closing-line', tool: 'polygon' } as MeasurementData
     });
     canvas.add(closingLine);
 
@@ -416,12 +435,12 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       hasBorders: true,
       cornerColor: toolColors.polygon,
       cornerSize: 8,
-      data: { type: 'measurement', tool: 'polygon' }
+      data: { type: 'measurement', tool: 'polygon' } as MeasurementData
     });
 
     canvas.add(polygon);
 
-    // Вычисляем площадь
+    // Вычисляем площадь и периметр
     const areaMm2 = MeasurementService.calculateArea(points, pxPerMm);
     const perimeterMm = MeasurementService.calculatePerimeter(points, pxPerMm);
     const bbox = MeasurementService.getBoundingBox(points);
@@ -437,7 +456,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         backgroundColor: 'white',
         padding: 4,
         selectable: true,
-        data: { type: 'measurement-label', tool: 'polygon' }
+        data: { type: 'measurement-label', tool: 'polygon' } as MeasurementData
       }
     );
 
@@ -449,10 +468,12 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
 
     setTempPoints([]);
     setTempLine(null);
-    setMeasurements([...measurements, polygon, infoText]);
+    
+    const newMeasurements = [...measurements, polygon, infoText];
+    setMeasurements(newMeasurements);
 
     if (onMeasurementsChange) {
-      onMeasurementsChange([...measurements, polygon, infoText]);
+      onMeasurementsChange(newMeasurements);
     }
     
     message.success(`Контур создан: площадь ${areaMm2.toFixed(0)} мм², периметр ${perimeterMm.toFixed(0)} мм`);
@@ -466,7 +487,6 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
     tempPoints.forEach(p => canvas.remove(p));
     if (tempLine) canvas.remove(tempLine);
     
-    // Очищаем обработчики линейки
     cleanupRulerHandlers();
 
     setMeasurements([]);
@@ -491,22 +511,18 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
 
   // Переключение режима измерения
   const toggleMeasurementMode = (tool: ToolType) => {
-    // Очищаем обработчик линейки при смене инструмента
     cleanupRulerHandlers();
     
     if (activeTool === tool) {
-      // Если выключили инструмент и это многоугольник с точками - завершаем его
       if (tool === 'polygon' && tempPoints.length >= 3) {
         completePolygon();
       } else if (tool === 'polygon' && tempPoints.length > 0) {
-        // Если точек меньше 3 - отменяем
         cancelPolygon();
       }
       
       setActiveTool('none');
       setMeasurementMode(false);
       
-      // Очищаем временные точки для других инструментов
       if (tool !== 'polygon' && canvas) {
         tempPoints.forEach(p => canvas.remove(p));
         if (tempLine) canvas.remove(tempLine);
@@ -514,7 +530,6 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         setTempLine(null);
       }
     } else {
-      // Если переключились на другой инструмент и был многоугольник - завершаем его
       if (activeTool === 'polygon' && tempPoints.length >= 3) {
         completePolygon();
       } else if (activeTool === 'polygon' && tempPoints.length > 0) {
@@ -588,7 +603,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
         {activeTool === 'polygon' && tempPoints.length > 0 && (
           <div className="bg-blue-50 p-2 rounded flex justify-between items-center">
             <span className="text-blue-700">
-              Точек: {tempPoints.length} {tempPoints.length < 3 ? '(нужно еще ' + (3 - tempPoints.length) + ')' : '(достаточно)'}
+              Точек: {tempPoints.length} {tempPoints.length < 3 ? `(нужно еще ${3 - tempPoints.length})` : '(достаточно)'}
             </span>
             <Space>
               <Button 
