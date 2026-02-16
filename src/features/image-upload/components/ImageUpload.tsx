@@ -1,4 +1,3 @@
-// src/features/image-upload/components/ImageUpload.tsx
 import React, { useCallback, useRef, useState } from 'react';
 import { Upload, Button, message, Card, Space, Progress, Alert } from 'antd';
 import { 
@@ -45,7 +44,7 @@ const ImageUpload: React.FC = () => {
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Ошибка загрузки');
     }
-    return false; // Предотвращаем стандартную загрузку
+    return false; 
   }, [uploadImage]);
 
   const handleCalibration = useCallback((pxPerMm: number) => {
@@ -178,7 +177,7 @@ const ImageUpload: React.FC = () => {
             </p>
             <div className="flex justify-center gap-4">
               <Button 
-                type="primary" 
+                // type="primary" 
                 icon={<UploadOutlined />}
                 size="large"
               >

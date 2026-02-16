@@ -1,4 +1,3 @@
-// src/features/image-upload/hooks/useImageUpload.ts
 import { useState, useCallback } from 'react';
 import { useAppDispatch } from '../../../app/store';
 import { 
@@ -17,7 +16,7 @@ export const useImageUpload = () => {
   const uploadImage = useCallback(async (file: File) => {
     try {
       dispatch(setLoading(true));
-      dispatch(setError(null)); // Теперь null допустим
+      dispatch(setError(null)); 
 
       // Валидация
       if (!ImageService.validateFileType(file)) {
@@ -50,7 +49,7 @@ export const useImageUpload = () => {
 
       return uploadedImage;
     } catch (error) {
-      // Правильная обработка ошибки
+      
       const errorMessage = error instanceof Error ? error.message : 'Ошибка загрузки файла';
       dispatch(setError(errorMessage));
       throw error;

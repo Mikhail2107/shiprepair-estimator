@@ -1,4 +1,3 @@
-// src/features/image-upload/store/imageSlice.ts
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 
 export interface UploadedImage {
@@ -21,14 +20,14 @@ interface ImageState {
   currentImage: UploadedImage | null;
   recentImages: UploadedImage[];
   isLoading: boolean;
-  error: string | null;  // Изменено с string на string | null
+  error: string | null; 
 }
 
 const initialState: ImageState = {
   currentImage: null,
   recentImages: [],
   isLoading: false,
-  error: null,  // Теперь null допустим
+  error: null,  
 };
 
 const imageSlice = createSlice({
@@ -38,7 +37,7 @@ const imageSlice = createSlice({
     setCurrentImage: (state, action: PayloadAction<UploadedImage>) => {
       state.currentImage = action.payload;
       
-      // Добавляем в недавние, если еще нет
+      
       const exists = state.recentImages.some(img => img.id === action.payload.id);
       if (!exists) {
         state.recentImages = [action.payload, ...state.recentImages].slice(0, 10);
@@ -55,12 +54,12 @@ const imageSlice = createSlice({
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.isLoading = action.payload;
     },
-    setError: (state, action: PayloadAction<string | null>) => {  // Изменено на string | null
+    setError: (state, action: PayloadAction<string | null>) => {  
       state.error = action.payload;
       state.isLoading = false;
     },
     clearError: (state) => {
-      state.error = null;  // Устанавливаем null, а не пустую строку
+      state.error = null;  
     },
   },
 });

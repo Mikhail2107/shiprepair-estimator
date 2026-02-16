@@ -233,7 +233,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate }) => {
             </>
           ) : (
             <Button
-              type="primary"
+              // type="primary"
               icon={<UserOutlined />}
               onClick={startCalibration}
             >
