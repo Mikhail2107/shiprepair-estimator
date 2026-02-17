@@ -23,7 +23,7 @@ const DefectList: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+     loadData();
   }, []);
 
   const handleDelete = async (id: number) => {
