@@ -1,4 +1,5 @@
-import React, {useState} from 'react';
+// src/features/dashboard/Dashboard.tsx
+import React, { useState } from 'react';
 import { Card, Row, Col, Statistic, Button } from 'antd';
 import {
   FileImageOutlined,
@@ -11,11 +12,6 @@ import ImageUpload from '../image-upload/components/ImageUpload';
 
 const Dashboard: React.FC = () => {
   const [showUpload, setShowUpload] = useState(false);
-  const recentAnalyses = [
-    { id: 1, date: '2024-01-15', defect: 'Коррозия язвенная', ship: 'Судно-01' },
-    { id: 2, date: '2024-01-14', defect: 'Трещина поверхностная', ship: 'Судно-02' },
-    { id: 3, date: '2024-01-13', defect: 'Деформация вмятина', ship: 'Судно-01' },
-  ];
 
   if (showUpload) {
     return (
@@ -39,7 +35,8 @@ const Dashboard: React.FC = () => {
           type="primary" 
           size="large" 
           className="bg-blue-600"
-          onClick={() => setShowUpload(true)}>
+          onClick={() => setShowUpload(true)}
+        >
           Начать новый анализ
         </Button>
       </div>
@@ -52,7 +49,7 @@ const Dashboard: React.FC = () => {
               title="Всего анализов"
               value={127}
               prefix={<FileImageOutlined />}
-              valueStyle={{ color: '#3f8600' }}
+              styles={{ content: { color: '#3f8600' } }} // Вместо valueStyle
             />
           </Card>
         </Col>
@@ -63,7 +60,7 @@ const Dashboard: React.FC = () => {
               value={86.5}
               suffix="%"
               prefix={<LineChartOutlined />}
-              valueStyle={{ color: '#1890ff' }}
+              styles={{ content: { color: '#1890ff' } }} // Вместо valueStyle
             />
           </Card>
         </Col>
@@ -73,7 +70,7 @@ const Dashboard: React.FC = () => {
               title="Дефектов в работе"
               value={12}
               prefix={<SafetyOutlined />}
-              valueStyle={{ color: '#fa8c16' }}
+              styles={{ content: { color: '#fa8c16' } }} // Вместо valueStyle
             />
           </Card>
         </Col>
@@ -84,7 +81,7 @@ const Dashboard: React.FC = () => {
               value={3.2}
               suffix="ч/смена"
               prefix={<ClockCircleOutlined />}
-              valueStyle={{ color: '#722ed1' }}
+              styles={{ content: { color: '#722ed1' } }} // Вместо valueStyle
             />
           </Card>
         </Col>
@@ -110,7 +107,11 @@ const Dashboard: React.FC = () => {
         <Col span={12}>
           <Card title="Недавние анализы" className="h-full">
             <div className="space-y-2">
-              {recentAnalyses.map(item => (
+              {[
+                { id: 1, date: '2024-01-15', defect: 'Коррозия язвенная', ship: 'Судно-01' },
+                { id: 2, date: '2024-01-14', defect: 'Трещина поверхностная', ship: 'Судно-02' },
+                { id: 3, date: '2024-01-13', defect: 'Деформация вмятина', ship: 'Судно-01' },
+              ].map(item => (
                 <div key={item.id} className="flex justify-between p-2 hover:bg-gray-50 rounded">
                   <div>
                     <div className="font-medium">{item.defect}</div>

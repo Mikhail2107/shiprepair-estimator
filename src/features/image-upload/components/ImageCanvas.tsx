@@ -22,29 +22,61 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
   const [canvas, setCanvas] = useState<fabric.Canvas | null>(null);
   const [zoom, setZoom] = useState(1);
   const [isCalibrating, setIsCalibrating] = useState(false);
+  const isCalibratingRef = useRef(false); // Добавляем ref для отслеживания состояния
   const [calibrationPoints, setCalibrationPoints] = useState<fabric.Object[]>([]);
   const [pxPerMm, setPxPerMm] = useState<number | null>(null);
   const [showCalibrationHelp, setShowCalibrationHelp] = useState(false);
+  const [isImageLoaded, setIsImageLoaded] = useState(false);
+  
+  // Используем refs для хранения данных
+  const calibrationPointsRef = useRef<{ x: number; y: number }[]>([]);
+  const calibrationHandlerRef = useRef<((opt: fabric.IEvent) => void) | null>(null);
 
   useEffect(() => {
-    if (canvasRef.current) {
-      // Инициализация Fabric canvas
-      const fabricCanvas = new fabric.Canvas(canvasRef.current, {
-        width: 900,
-        height: 600,
-        backgroundColor: '#f5f5f5',
-      });
-      
-      setCanvas(fabricCanvas);
+    console.log('🖼️ ImageCanvas: инициализация с imageUrl:', imageUrl.substring(0, 50) + '...');
+    
+    if (!canvasRef.current) {
+      console.error('❌ canvasRef.current is null');
+      return;
+    }
 
-      // Загрузка изображения
-      fabric.Image.fromURL(imageUrl, (img) => {
-        // Масштабируем изображение под размер canvas
+    const fabricCanvas = new fabric.Canvas(canvasRef.current, {
+      width: 900,
+      height: 600,
+      backgroundColor: '#f5f5f5',
+    });
+    
+    console.log('✅ fabricCanvas создан');
+    setCanvas(fabricCanvas);
+    setIsImageLoaded(false);
+
+    console.log('🔄 Загрузка изображения...');
+    fabric.Image.fromURL(
+      imageUrl, 
+      (img) => {
+        console.log('✅ Изображение загружено успешно');
+        
+        if (!fabricCanvas) {
+          console.error('❌ fabricCanvas не существует в момент загрузки');
+          return;
+        }
+        
+        console.log('📐 Размеры изображения:', img.width, 'x', img.height);
+        console.log('📐 Размеры canvas:', fabricCanvas.width, 'x', fabricCanvas.height);
+        
+        // Проверяем, что canvas готов к рисованию
+        if (!fabricCanvas.contextContainer) {
+          console.error('❌ canvas context не готов');
+          return;
+        }
+        
         const scale = Math.min(
           (fabricCanvas.width! - 40) / img.width!,
           (fabricCanvas.height! - 40) / img.height!,
           1
         );
+        
+        console.log('📏 Масштаб изображения:', scale.toFixed(2));
         
         img.scale(scale);
         img.set({
@@ -59,20 +91,35 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         fabricCanvas.add(img);
         fabricCanvas.sendToBack(img);
         fabricCanvas.renderAll();
-
-        // Показываем подсказку по калибровке
+        
+        console.log('✅ Изображение отрисовано на canvas');
+        
+        setIsImageLoaded(true);
         setShowCalibrationHelp(true);
-      });
+      },
+      { 
+        crossOrigin: 'anonymous',
+      }
+    );
 
-      return () => {
-        fabricCanvas.dispose();
-      };
-    }
+    return () => {
+      console.log('🧹 Очистка canvas');
+      fabricCanvas.dispose();
+    };
   }, [imageUrl]);
+
+  // Эффект для рендера при изменении zoom
+  useEffect(() => {
+    if (canvas && isImageLoaded) {
+      console.log('🔄 Рендер с zoom:', zoom);
+      canvas.renderAll();
+    }
+  }, [zoom, canvas, isImageLoaded]);
 
   const handleZoomIn = () => {
     if (canvas) {
       const newZoom = zoom * 1.2;
+      console.log('🔍 Zoom in:', newZoom);
       canvas.setZoom(newZoom);
       setZoom(newZoom);
       canvas.renderAll();
@@ -82,6 +129,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
   const handleZoomOut = () => {
     if (canvas) {
       const newZoom = zoom * 0.8;
+      console.log('🔍 Zoom out:', newZoom);
       canvas.setZoom(newZoom);
       setZoom(newZoom);
       canvas.renderAll();
@@ -90,6 +138,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
 
   const handleReset = () => {
     if (canvas) {
+      console.log('🔄 Сброс zoom');
       canvas.setZoom(1);
       setZoom(1);
       canvas.renderAll();
@@ -98,28 +147,54 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
 
   // Калибровка по линейке
   const startCalibration = () => {
-    if (!canvas) return;
+    console.log('🎯 startCalibration вызвана');
     
+    if (!canvas) {
+      console.error('❌ canvas не существует');
+      message.error('Холст не инициализирован');
+      return;
+    }
+    
+    if (!isImageLoaded) {
+      console.error('❌ изображение не загружено');
+      message.error('Изображение еще не загружено');
+      return;
+    }
+    
+    console.log('🎯 Начинаем калибровку');
     setIsCalibrating(true);
+    isCalibratingRef.current = true; // Устанавливаем ref в true
+    
+    calibrationPointsRef.current = []; // Очищаем ref
+    
     message.info('Нажмите на начало и конец линейки (10 см)');
     
     // Очищаем предыдущие точки калибровки
     calibrationPoints.forEach(point => canvas.remove(point));
     setCalibrationPoints([]);
     
-    const points: { x: number; y: number }[] = [];
-    
     const handleMouseDown = (opt: fabric.IEvent) => {
-      if (!isCalibrating) return;
+      console.log('🖱️ Клик в режиме калибровки');
+      console.log('  isCalibratingRef.current:', isCalibratingRef.current);
+      console.log('  canvas exists:', !!canvas);
+      
+      if (!isCalibratingRef.current || !canvas) { // Используем ref вместо state
+        console.log('  ⚠️ Игнорируем клик - не в режиме калибровки или нет canvas');
+        return;
+      }
       
       const pointer = canvas.getPointer(opt.e);
-      const x = pointer.x;
-      const y = pointer.y;
+      const point = { x: pointer.x, y: pointer.y };
+      
+      console.log(`  📍 Точка ${calibrationPointsRef.current.length + 1}: (${point.x.toFixed(1)}, ${point.y.toFixed(1)})`);
+      
+      // Добавляем точку в ref
+      calibrationPointsRef.current = [...calibrationPointsRef.current, point];
       
       // Рисуем точку
       const circle = new fabric.Circle({
-        left: x - 5,
-        top: y - 5,
+        left: point.x - 5,
+        top: point.y - 5,
         radius: 5,
         fill: '#2563eb',
         stroke: 'white',
@@ -129,11 +204,16 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
       });
       
       canvas.add(circle);
-      points.push({ x, y });
-      setCalibrationPoints([...calibrationPoints, circle]);
+      setCalibrationPoints(prev => [...prev, circle]);
+      canvas.renderAll();
       
-      // Если выбраны две точки - рисуем линию и вычисляем масштаб
-      if (points.length === 2) {
+      // Если выбраны две точки - завершаем калибровку
+      if (calibrationPointsRef.current.length === 2) {
+        console.log('✅ Получены две точки, завершаем калибровку');
+        
+        const points = calibrationPointsRef.current;
+        
+        // Рисуем линию между точками
         const line = new fabric.Line([points[0].x, points[0].y, points[1].x, points[1].y], {
           stroke: '#16a34a',
           strokeWidth: 3,
@@ -144,14 +224,18 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         
         canvas.add(line);
         
-        // Вычисляем расстояние в пикселях
+        // Вычисляем расстояние
         const distance = Math.sqrt(
           Math.pow(points[1].x - points[0].x, 2) + 
           Math.pow(points[1].y - points[0].y, 2)
         );
         
+        console.log(`📏 Расстояние между точками: ${distance.toFixed(1)} px`);
+        
         // Предполагаем, что линейка 10 см = 100 мм
         const calculatedPxPerMm = distance / 100;
+        console.log(`📏 Масштаб: ${calculatedPxPerMm.toFixed(2)} px/мм`);
+        
         setPxPerMm(calculatedPxPerMm);
         
         // Добавляем текст с результатом
@@ -167,39 +251,60 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         });
         
         canvas.add(text);
-        setCalibrationPoints([...calibrationPoints, line, text]);
+        setCalibrationPoints(prev => [...prev, line, text]);
+        canvas.renderAll();
         
-        // Вызываем callback с результатом
-        if (onCalibrate) {
-          onCalibrate(calculatedPxPerMm);
-        }
+        // Вызываем callback
+        console.log('📞 Вызываем onCalibrate');
+        onCalibrate?.(calculatedPxPerMm);
         
         message.success(`Калибровка выполнена: ${calculatedPxPerMm.toFixed(2)} px/мм`);
         
         // Завершаем режим калибровки
         setIsCalibrating(false);
+        isCalibratingRef.current = false; // Сбрасываем ref
         
-        // Удаляем временные обработчики
-        canvas.off('mouse:down', handleMouseDown);
+        // Удаляем обработчик
+        if (calibrationHandlerRef.current) {
+          console.log('🧹 Удаляем обработчик');
+          canvas.off('mouse:down', calibrationHandlerRef.current);
+          calibrationHandlerRef.current = null;
+        }
       }
     };
     
+    // Сохраняем в ref и привязываем обработчик
+    console.log('🔗 Привязываем обработчик mouse:down');
+    calibrationHandlerRef.current = handleMouseDown;
     canvas.on('mouse:down', handleMouseDown);
   };
 
   const cancelCalibration = () => {
+    console.log('❌ Отмена калибровки');
+    
     if (!canvas) return;
     
     setIsCalibrating(false);
+    isCalibratingRef.current = false; // Сбрасываем ref
+    calibrationPointsRef.current = [];
     
     // Удаляем все точки калибровки
     calibrationPoints.forEach(point => canvas.remove(point));
     setCalibrationPoints([]);
+    canvas.renderAll();
+    
+    // Удаляем обработчик используя ref
+    if (calibrationHandlerRef.current) {
+      console.log('🧹 Удаляем обработчик');
+      canvas.off('mouse:down', calibrationHandlerRef.current);
+      calibrationHandlerRef.current = null;
+    }
     
     message.info('Калибровка отменена');
   };
 
   const handleSave = () => {
+    console.log('💾 Сохранение измерений');
     if (onSave) {
       onSave();
     } else {
@@ -209,7 +314,6 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
 
   return (
     <div className="space-y-4">
-      {/* Модальное окно с подсказкой */}
       <Modal
         title="Калибровка изображения"
         open={showCalibrationHelp}
@@ -234,8 +338,18 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         </div>
       </Modal>
 
-      <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+      <div className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50 relative">
         <canvas ref={canvasRef} />
+        {!isImageLoaded && (
+          <div className="absolute inset-0 flex items-center justify-center bg-gray-100 bg-opacity-75">
+            <div className="text-gray-500">Загрузка изображения...</div>
+          </div>
+        )}
+        {isCalibrating && (
+          <div className="absolute top-2 left-2 bg-blue-500 text-white px-3 py-1 rounded-full text-sm">
+            ⚡ Режим калибровки
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between">
@@ -276,7 +390,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
                 Отменить калибровку
               </Button>
               <span className="text-blue-600">
-                Выберите начало и конец линейки (10 см)
+                Кликните на начало и конец линейки
               </span>
             </>
           ) : (
@@ -284,6 +398,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
               type={pxPerMm ? 'default' : 'primary'}
               icon={<UserOutlined />}
               onClick={startCalibration}
+              disabled={!isImageLoaded}
             >
               {pxPerMm ? 'Перекалибровать' : 'Калибровка по линейке'}
             </Button>
@@ -316,13 +431,12 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         />
       </div>
 
-      {/* Инструменты измерения (появляются после калибровки) */}
-      {pxPerMm && canvas && (
+      {pxPerMm && canvas && isImageLoaded && (
         <MeasurementTools
           canvas={canvas}
           pxPerMm={pxPerMm}
           onMeasurementsChange={(measurements) => {
-            console.log('Measurements updated:', measurements);
+            console.log('📊 Measurements updated:', measurements.length);
           }}
         />
       )}

@@ -1,11 +1,13 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Upload, Button, message, Card, Space, Progress, Alert } from 'antd';
+// src/features/image-upload/components/ImageUpload.tsx
+import React, { useCallback, useState, useEffect } from 'react'; // убрали useRef
+import { Upload, Button, message, Card, Space, Progress, Alert, Modal } from 'antd';
 import { 
   UploadOutlined, 
   CameraOutlined, 
   DeleteOutlined,
   CheckCircleOutlined,
-  FileImageOutlined 
+  FileImageOutlined,
+  SaveOutlined
 } from '@ant-design/icons';
 import { useImageUpload } from '../hooks/useImageUpload';
 import { useAppSelector, useAppDispatch } from '../../../app/store';
@@ -19,10 +21,10 @@ const ImageUpload: React.FC = () => {
   const { uploadImage, clearPreview, previewUrl } = useImageUpload();
   const { currentImage, isLoading, error } = useAppSelector(state => state.image);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [saveModalVisible, setSaveModalVisible] = useState(false);
 
   const handleFileUpload = useCallback(async (file: File) => {
     try {
-      // Имитация прогресса загрузки
       setUploadProgress(0);
       const interval = setInterval(() => {
         setUploadProgress(prev => {
@@ -44,7 +46,7 @@ const ImageUpload: React.FC = () => {
     } catch (error) {
       message.error(error instanceof Error ? error.message : 'Ошибка загрузки');
     }
-    return false; 
+    return false;
   }, [uploadImage]);
 
   const handleCalibration = useCallback((pxPerMm: number) => {
@@ -56,13 +58,16 @@ const ImageUpload: React.FC = () => {
     message.success(`Калибровка выполнена: ${pxPerMm.toFixed(2)} px/мм`);
   }, [dispatch]);
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    const file = e.dataTransfer.files[0];
-    if (file) {
-      handleFileUpload(file);
-    }
-  }, [handleFileUpload]);
+  const handleSave = useCallback(() => {
+    setSaveModalVisible(true);
+  }, []);
+
+  const handleConfirmSave = useCallback(() => {
+    // Здесь будет логика сохранения в БД
+    message.success('Данные сохранены в локальную базу');
+    setSaveModalVisible(false);
+    clearPreview();
+  }, [clearPreview]);
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -78,7 +83,7 @@ const ImageUpload: React.FC = () => {
     }
   }, [handleFileUpload]);
 
-  React.useEffect(() => {
+  useEffect(() => {
     document.addEventListener('paste', handlePaste);
     return () => document.removeEventListener('paste', handlePaste);
   }, [handlePaste]);
@@ -87,6 +92,31 @@ const ImageUpload: React.FC = () => {
   if (currentImage && previewUrl) {
     return (
       <div className="space-y-4">
+        {/* Модальное окно сохранения */}
+        <Modal
+          title="Сохранение измерений"
+          open={saveModalVisible}
+          onOk={handleConfirmSave}
+          onCancel={() => setSaveModalVisible(false)}
+          okText="Сохранить"
+          cancelText="Отмена"
+        >
+          <div className="space-y-3">
+            <p>Будут сохранены:</p>
+            <ul className="list-disc list-inside text-sm">
+              <li>Изображение дефекта</li>
+              <li>Калибровочные данные</li>
+              <li>Все выполненные измерения</li>
+              <li>Дата и время анализа</li>
+            </ul>
+            <div className="bg-blue-50 p-3 rounded mt-2">
+              <p className="text-blue-800 text-sm">
+                ⚡ Все данные хранятся локально на вашем компьютере
+              </p>
+            </div>
+          </div>
+        </Modal>
+
         <Card 
           title={
             <div className="flex items-center">
@@ -108,6 +138,7 @@ const ImageUpload: React.FC = () => {
           <ImageCanvas 
             imageUrl={previewUrl} 
             onCalibrate={handleCalibration}
+            onSave={handleSave}
           />
         </Card>
 
@@ -117,7 +148,7 @@ const ImageUpload: React.FC = () => {
             Размер: {currentImage.width}×{currentImage.height} px
             {currentImage.calibration && (
               <span className="ml-4">
-                Масштаб: {currentImage.calibration.pxPerMm.toFixed(2)} px/мм
+                ✅ Масштаб: {currentImage.calibration.pxPerMm.toFixed(2)} px/мм
               </span>
             )}
           </div>
@@ -126,19 +157,19 @@ const ImageUpload: React.FC = () => {
             <Button 
               icon={<CameraOutlined />} 
               onClick={() => {
-                // TODO: Сделать новое фото
+                clearPreview();
+                message.info('Сделайте новое фото');
               }}
             >
               Новое фото
             </Button>
             <Button 
               type="primary"
-              onClick={() => {
-                // TODO: Перейти к следующему шагу
-              }}
+              icon={<SaveOutlined />}
+              onClick={handleSave}
               disabled={!currentImage.calibration}
             >
-              {currentImage.calibration ? 'Далее: Анализ дефекта' : 'Сначала выполните калибровку'}
+              {currentImage.calibration ? 'Сохранить анализ' : 'Сначала выполните калибровку'}
             </Button>
           </Space>
         </div>
@@ -177,7 +208,7 @@ const ImageUpload: React.FC = () => {
             </p>
             <div className="flex justify-center gap-4">
               <Button 
-                // type="primary" 
+                type="primary" 
                 icon={<UploadOutlined />}
                 size="large"
               >
@@ -218,7 +249,14 @@ const ImageUpload: React.FC = () => {
                 <FileImageOutlined className="text-2xl text-gray-400" />
               </div>
               <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
-                <Button size="small" className="opacity-0 group-hover:opacity-100">
+                <Button 
+                  size="small" 
+                  className="opacity-0 group-hover:opacity-100"
+                  onClick={() => {
+                    // Здесь будет загрузка из истории
+                    message.info('Функция загрузки из истории будет добавлена');
+                  }}
+                >
                   Загрузить
                 </Button>
               </div>
@@ -240,6 +278,7 @@ const ImageUpload: React.FC = () => {
               <li>• Обеспечьте хорошее освещение</li>
               <li>• Держите камеру параллельно поверхности</li>
               <li>• Избегайте бликов и теней на дефекте</li>
+              <li>• Линейка должна быть четко видна на фото</li>
             </ul>
           </div>
         </div>

@@ -1,4 +1,3 @@
-// src/features/image-upload/components/MeasurementTools.tsx
 import React, { useState, useEffect, useRef } from 'react';
 import { fabric } from 'fabric';
 import { Card, Button, Space, Tooltip, Badge, message } from 'antd';
@@ -13,13 +12,8 @@ import {
 } from '@ant-design/icons';
 import { MeasurementService } from '../../../services/measurement/MeasurementService';
 
-// Расширяем интерфейс Canvas для хранения обработчика
-interface ExtendedCanvas extends fabric.Canvas {
-  __rulerMouseMoveHandler?: (opt: fabric.IEvent) => void;
-}
-
 interface MeasurementToolsProps {
-  canvas: ExtendedCanvas | null;
+  canvas: fabric.Canvas | null;  // Возвращаем обычный тип
   pxPerMm: number;
   onMeasurementsChange?: (measurements: fabric.Object[]) => void;
 }
@@ -45,6 +39,9 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
   const [tempLine, setTempLine] = useState<fabric.Line | null>(null);
   const [measurementMode, setMeasurementMode] = useState(false);
   
+  // Используем ref для хранения обработчика движения мыши
+  const rulerMouseMoveHandlerRef = useRef<((opt: fabric.IEvent) => void) | null>(null);
+  
   // Используем ref для хранения актуального значения tempPoints в замыканиях
   const tempPointsRef = useRef<fabric.Circle[]>([]);
   
@@ -63,9 +60,9 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
 
   // Очистка обработчиков событий
   const cleanupRulerHandlers = () => {
-    if (canvas?.__rulerMouseMoveHandler) {
-      canvas.off('mouse:move', canvas.__rulerMouseMoveHandler);
-      delete canvas.__rulerMouseMoveHandler;
+    if (canvas && rulerMouseMoveHandlerRef.current) {
+      canvas.off('mouse:move', rulerMouseMoveHandlerRef.current);
+      rulerMouseMoveHandlerRef.current = null;
     }
   };
 
@@ -121,7 +118,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
       };
       
       canvas.on('mouse:move', handleMouseMove);
-      canvas.__rulerMouseMoveHandler = handleMouseMove;
+      rulerMouseMoveHandlerRef.current = handleMouseMove;
       
     } else if (tempPoints.length === 1) {
       // Вторая точка - завершаем измерение
