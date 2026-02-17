@@ -540,7 +540,7 @@ const MeasurementTools: React.FC<MeasurementToolsProps> = ({
 
   return (
     <Card size="small" title="Инструменты измерения" className="shadow-sm">
-      <Space direction="vertical" className="w-full" size="middle">
+      <Space orientation="vertical" className="w-full" size="middle">
         <div className="flex flex-wrap gap-2">
           <Tooltip title="Линейка (измерение расстояния) - кликните два раза">
             <Button

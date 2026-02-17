@@ -65,10 +65,10 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         console.log('📐 Размеры canvas:', fabricCanvas.width, 'x', fabricCanvas.height);
         
         // Проверяем, что canvas готов к рисованию
-        if (!fabricCanvas.contextContainer) {
-          console.error('❌ canvas context не готов');
-          return;
-        }
+        // if (!fabricCanvas.contextContainer) {
+        //   console.error('❌ canvas context не готов');
+        //   return;
+        // }
         
         const scale = Math.min(
           (fabricCanvas.width! - 40) / img.width!,
