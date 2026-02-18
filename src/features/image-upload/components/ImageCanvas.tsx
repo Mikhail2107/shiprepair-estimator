@@ -1,4 +1,4 @@
-
+// src/features/image-upload/components/ImageCanvas.tsx
 import React, { useEffect, useRef, useState } from 'react';
 import { fabric } from 'fabric';
 import { Slider, Space, Tooltip, Button, message, Modal } from 'antd';
@@ -15,15 +15,20 @@ interface ImageCanvasProps {
   imageUrl: string;
   onCalibrate?: (pxPerMm: number) => void;
   onSave?: () => void;
-  onMeasurementsChange?: (measurements: fabric.Object[]) => void;
+  onMeasurementsChange?: (measurements: fabric.Object[]) => void; // ✅ Добавляем проп
 }
 
-const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave }) => {
+const ImageCanvas: React.FC<ImageCanvasProps> = ({ 
+  imageUrl, 
+  onCalibrate, 
+  onSave,
+  onMeasurementsChange  // ✅ Получаем проп из родителя
+}) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [canvas, setCanvas] = useState<fabric.Canvas | null>(null);
   const [zoom, setZoom] = useState(1);
   const [isCalibrating, setIsCalibrating] = useState(false);
-  const isCalibratingRef = useRef(false); // Добавляем ref для отслеживания состояния
+  const isCalibratingRef = useRef(false);
   const [calibrationPoints, setCalibrationPoints] = useState<fabric.Object[]>([]);
   const [pxPerMm, setPxPerMm] = useState<number | null>(null);
   const [showCalibrationHelp, setShowCalibrationHelp] = useState(false);
@@ -64,12 +69,6 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         
         console.log('📐 Размеры изображения:', img.width, 'x', img.height);
         console.log('📐 Размеры canvas:', fabricCanvas.width, 'x', fabricCanvas.height);
-        
-        // Проверяем, что canvas готов к рисованию
-        // if (!fabricCanvas.contextContainer) {
-        //   console.error('❌ canvas context не готов');
-        //   return;
-        // }
         
         const scale = Math.min(
           (fabricCanvas.width! - 40) / img.width!,
@@ -164,9 +163,9 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
     
     console.log('🎯 Начинаем калибровку');
     setIsCalibrating(true);
-    isCalibratingRef.current = true; // Устанавливаем ref в true
+    isCalibratingRef.current = true;
     
-    calibrationPointsRef.current = []; // Очищаем ref
+    calibrationPointsRef.current = [];
     
     message.info('Нажмите на начало и конец линейки (10 см)');
     
@@ -179,7 +178,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
       console.log('  isCalibratingRef.current:', isCalibratingRef.current);
       console.log('  canvas exists:', !!canvas);
       
-      if (!isCalibratingRef.current || !canvas) { // Используем ref вместо state
+      if (!isCalibratingRef.current || !canvas) {
         console.log('  ⚠️ Игнорируем клик - не в режиме калибровки или нет canvas');
         return;
       }
@@ -263,7 +262,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         
         // Завершаем режим калибровки
         setIsCalibrating(false);
-        isCalibratingRef.current = false; // Сбрасываем ref
+        isCalibratingRef.current = false;
         
         // Удаляем обработчик
         if (calibrationHandlerRef.current) {
@@ -286,7 +285,7 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
     if (!canvas) return;
     
     setIsCalibrating(false);
-    isCalibratingRef.current = false; // Сбрасываем ref
+    isCalibratingRef.current = false;
     calibrationPointsRef.current = [];
     
     // Удаляем все точки калибровки
@@ -310,6 +309,15 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
       onSave();
     } else {
       message.success('Измерения сохранены');
+    }
+  };
+
+  // Обработчик изменений измерений
+  const handleMeasurementsChange = (measurements: fabric.Object[]) => {
+    console.log('📊 Измерения обновлены:', measurements.length);
+    // Передаем изменения наверх, если есть callback
+    if (onMeasurementsChange) {
+      onMeasurementsChange(measurements);
     }
   };
 
@@ -432,13 +440,14 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         />
       </div>
 
-       {pxPerMm && canvas && isImageLoaded && (
-      <MeasurementTools
-        canvas={canvas}
-        pxPerMm={pxPerMm}
-        onMeasurementsChange={onMeasurementsChange}
-      />
-    )}
+      {/* Инструменты измерения появляются после калибровки */}
+      {pxPerMm && canvas && isImageLoaded && (
+        <MeasurementTools
+          canvas={canvas}
+          pxPerMm={pxPerMm}
+          onMeasurementsChange={handleMeasurementsChange} // ✅ Передаем наш обработчик
+        />
+      )}
     </div>
   );
 };
