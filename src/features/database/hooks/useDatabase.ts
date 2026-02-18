@@ -1,4 +1,3 @@
-// src/features/database/hooks/useDatabase.ts
 import { useState, useCallback } from 'react';
 import
 //  DatabaseService, 

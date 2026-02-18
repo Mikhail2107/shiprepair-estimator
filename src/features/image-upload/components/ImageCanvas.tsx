@@ -1,4 +1,4 @@
-// src/features/image-upload/components/ImageCanvas.tsx
+
 import React, { useEffect, useRef, useState } from 'react';
 import { fabric } from 'fabric';
 import { Slider, Space, Tooltip, Button, message, Modal } from 'antd';
@@ -15,6 +15,7 @@ interface ImageCanvasProps {
   imageUrl: string;
   onCalibrate?: (pxPerMm: number) => void;
   onSave?: () => void;
+  onMeasurementsChange?: (measurements: fabric.Object[]) => void;
 }
 
 const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave }) => {
@@ -431,15 +432,13 @@ const ImageCanvas: React.FC<ImageCanvasProps> = ({ imageUrl, onCalibrate, onSave
         />
       </div>
 
-      {pxPerMm && canvas && isImageLoaded && (
-        <MeasurementTools
-          canvas={canvas}
-          pxPerMm={pxPerMm}
-          onMeasurementsChange={(measurements) => {
-            console.log('📊 Measurements updated:', measurements.length);
-          }}
-        />
-      )}
+       {pxPerMm && canvas && isImageLoaded && (
+      <MeasurementTools
+        canvas={canvas}
+        pxPerMm={pxPerMm}
+        onMeasurementsChange={onMeasurementsChange}
+      />
+    )}
     </div>
   );
 };
