@@ -4,7 +4,7 @@ import { Card, Row, Col, Statistic, Button, Tabs } from 'antd';
 import {
   FileImageOutlined,
   LineChartOutlined,
-  SafetyOutlined,
+  // SafetyOutlined,
   ClockCircleOutlined,
   CameraOutlined,
   DatabaseOutlined
@@ -19,15 +19,29 @@ const Dashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState('1');
   const { getStats } = useDatabase();
   const [stats, setStats] = useState({ total: 0, withFrameNumber: 0, averagePxPerMm: 0 });
-
+  
   useEffect(() => {
-    loadStats();
-  }, [activeTab]);
+    let isMounted = true; // Флаг для предотвращения обновления состояния после размонтирования
 
-  const loadStats = async () => {
-    const statsData = await getStats();
-    setStats(statsData);
-  };
+    const loadStats = async () => {
+      try {
+        const statsData = await getStats();
+        if (isMounted) {
+          setStats(statsData);
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки статистики:', error);
+      }
+    };
+
+    loadStats();
+
+    return () => {
+      isMounted = false; // Очищаем флаг при размонтировании
+    };
+  }, [activeTab, getStats]); // Зависимости: при смене вкладки или изменении getStats
+
+
 
   return (
     <div className="space-y-6">
