@@ -1,5 +1,7 @@
+// src/features/database/components/DefectList.tsx
 import React, { useEffect, useState } from 'react';
 import { Card, Table, Button, Space, Tag, Modal, message, Statistic, Row, Col } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
 import { 
   DeleteOutlined, 
   EyeOutlined, 
@@ -15,16 +17,33 @@ const DefectList: React.FC = () => {
   const [stats, setStats] = useState({ total: 0, withFrameNumber: 0, averagePxPerMm: 0 });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
 
-  const loadData = async () => {
-    const data = await getAllDefects();
-    setDefects(data);
-    const statsData = await getStats();
-    setStats(statsData);
-  };
-
+  // Загружаем данные при монтировании компонента
   useEffect(() => {
-     loadData();
-  }, []);
+    let isMounted = true;
+
+    const loadData = async () => {
+      try {
+        const data = await getAllDefects();
+        const statsData = await getStats();
+        
+        if (isMounted) {
+          setDefects(data);
+          setStats(statsData);
+        }
+      } catch (error) {
+        console.error('Ошибка загрузки данных:', error);
+        if (isMounted) {
+          message.error('Ошибка при загрузке данных');
+        }
+      }
+    };
+
+    loadData();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [getAllDefects, getStats]);
 
   const handleDelete = async (id: number) => {
     Modal.confirm({
@@ -34,12 +53,20 @@ const DefectList: React.FC = () => {
       cancelText: 'Отмена',
       okButtonProps: { danger: true },
       onOk: async () => {
-        const success = await deleteDefect(id);
-        if (success) {
-          message.success('Запись удалена');
-          loadData();
-        } else {
+        try {
+          const success = await deleteDefect(id);
+          if (success) {
+            message.success('Запись удалена');
+            const data = await getAllDefects();
+            const statsData = await getStats();
+            setDefects(data);
+            setStats(statsData);
+          } else {
+            message.error('Ошибка при удалении');
+          }
+        } catch (error) {
           message.error('Ошибка при удалении');
+          console.error(error);
         }
       },
     });
@@ -49,7 +76,8 @@ const DefectList: React.FC = () => {
     setPreviewImage(imagePath);
   };
 
-  const columns = [
+  // Типизированные колонки для таблицы
+  const columns: ColumnsType<DefectMeasurement> = [
     {
       title: 'ID',
       dataIndex: 'id',
@@ -60,7 +88,7 @@ const DefectList: React.FC = () => {
       title: 'Изображение',
       key: 'image',
       width: 80,
-      render: (_: unknown, record: DefectMeasurement) => (
+      render: (_, record: DefectMeasurement) => (  // ✅ Вместо _: any используем _: undefined или просто _
         <Button 
           icon={<FileImageOutlined />} 
           onClick={() => handlePreview(record.imagePath)}
@@ -85,13 +113,13 @@ const DefectList: React.FC = () => {
       title: 'Шпангоут',
       dataIndex: 'frameNumber',
       key: 'frameNumber',
-      render: (value: string) => value || '—',
+      render: (value?: string) => value || '—',  // ✅ Типизируем value как optional string
     },
     {
       title: 'Борт',
       dataIndex: 'side',
       key: 'side',
-      render: (value: string) => {
+      render: (value?: 'ЛБ' | 'ПБ') => {  // ✅ Типизируем value как union тип
         if (!value) return '—';
         return <Tag color={value === 'ЛБ' ? 'blue' : 'green'}>{value}</Tag>;
       },
@@ -106,13 +134,12 @@ const DefectList: React.FC = () => {
       title: 'Действия',
       key: 'actions',
       width: 120,
-      render: (_: unknown, record: DefectMeasurement) => (
+      render: (_, record: DefectMeasurement) => (  // ✅ Типизируем record
         <Space>
           <Button 
             icon={<EyeOutlined />} 
             size="small"
             onClick={() => {
-              // TODO: Открыть детальный просмотр
               message.info('Просмотр в разработке');
             }}
           />
