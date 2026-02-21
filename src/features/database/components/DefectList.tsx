@@ -1,83 +1,68 @@
 // src/features/database/components/DefectList.tsx
 import React, { useEffect, useState } from 'react';
-import { Card, Table, Button, Space, Tag, Modal, message, Statistic, Row, Col } from 'antd';
-import type { ColumnsType } from 'antd/es/table';
+import { Card, Table, Button, Space, Tag, Modal, message, Statistic, Row, Col, Image } from 'antd';
 import { 
   DeleteOutlined, 
   EyeOutlined, 
   FileImageOutlined,
-  BarChartOutlined 
+  BarChartOutlined,
+  FolderOpenOutlined 
 } from '@ant-design/icons';
 import { useDatabase } from '../hooks/useDatabase';
-import { DefectMeasurement } from '../../../services/db/DatabaseService';
+import { DefectData } from '../../../services/db/FileStorageService';
+// import fs from 'fs';
 
 const DefectList: React.FC = () => {
   const { getAllDefects, deleteDefect, getStats, loading } = useDatabase();
-  const [defects, setDefects] = useState<DefectMeasurement[]>([]);
+  const [defects, setDefects] = useState<DefectData[]>([]);
   const [stats, setStats] = useState({ total: 0, withFrameNumber: 0, averagePxPerMm: 0 });
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [imageLoading, setImageLoading] = useState(false);
 
-  // Загружаем данные при монтировании компонента
+  const loadData = async () => {
+    const data = await getAllDefects();
+    setDefects(data);
+    const statsData = await getStats();
+    setStats(statsData);
+  };
+
   useEffect(() => {
-    let isMounted = true;
-
-    const loadData = async () => {
-      try {
-        const data = await getAllDefects();
-        const statsData = await getStats();
-        
-        if (isMounted) {
-          setDefects(data);
-          setStats(statsData);
-        }
-      } catch (error) {
-        console.error('Ошибка загрузки данных:', error);
-        if (isMounted) {
-          message.error('Ошибка при загрузке данных');
-        }
-      }
-    };
-
     loadData();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [getAllDefects, getStats]);
+  }, []);
 
   const handleDelete = async (id: number) => {
     Modal.confirm({
       title: 'Удаление записи',
-      content: 'Вы уверены, что хотите удалить этот дефект?',
+      content: 'Вы уверены, что хотите удалить этот дефект? Файлы будут удалены безвозвратно.',
       okText: 'Удалить',
       cancelText: 'Отмена',
       okButtonProps: { danger: true },
       onOk: async () => {
-        try {
-          const success = await deleteDefect(id);
-          if (success) {
-            message.success('Запись удалена');
-            const data = await getAllDefects();
-            const statsData = await getStats();
-            setDefects(data);
-            setStats(statsData);
-          } else {
-            message.error('Ошибка при удалении');
-          }
-        } catch (error) {
+        const success = await deleteDefect(id);
+        if (success) {
+          message.success('Запись удалена');
+          loadData();
+        } else {
           message.error('Ошибка при удалении');
-          console.error(error);
         }
       },
     });
   };
 
-  const handlePreview = (imagePath: string) => {
-    setPreviewImage(imagePath);
+  const handlePreview = async (imagePath: string) => {
+    setImageLoading(true);
+    try {
+      // В реальном приложении здесь нужно читать файл
+      // Для демонстрации используем путь как есть
+      setPreviewImage(`file://${imagePath}`);
+    } catch (error) {
+      message.error('Не удалось загрузить изображение', error);
+    } finally {
+      setImageLoading(false);
+    }
   };
 
-  // Типизированные колонки для таблицы
-  const columns: ColumnsType<DefectMeasurement> = [
+  const columns = [
     {
       title: 'ID',
       dataIndex: 'id',
@@ -87,11 +72,12 @@ const DefectList: React.FC = () => {
     {
       title: 'Изображение',
       key: 'image',
-      width: 80,
-      render: (_, record: DefectMeasurement) => (  // ✅ Вместо _: any используем _: undefined или просто _
+      width: 100,
+      render: (_, record: DefectData) => (
         <Button 
           icon={<FileImageOutlined />} 
           onClick={() => handlePreview(record.imagePath)}
+          loading={imageLoading}
         >
           Просмотр
         </Button>
@@ -113,13 +99,13 @@ const DefectList: React.FC = () => {
       title: 'Шпангоут',
       dataIndex: 'frameNumber',
       key: 'frameNumber',
-      render: (value?: string) => value || '—',  // ✅ Типизируем value как optional string
+      render: (value: string) => value || '—',
     },
     {
       title: 'Борт',
       dataIndex: 'side',
       key: 'side',
-      render: (value?: 'ЛБ' | 'ПБ') => {  // ✅ Типизируем value как union тип
+      render: (value: string) => {
         if (!value) return '—';
         return <Tag color={value === 'ЛБ' ? 'blue' : 'green'}>{value}</Tag>;
       },
@@ -134,12 +120,13 @@ const DefectList: React.FC = () => {
       title: 'Действия',
       key: 'actions',
       width: 120,
-      render: (_, record: DefectMeasurement) => (  // ✅ Типизируем record
+      render: (_, record: DefectData) => (
         <Space>
           <Button 
             icon={<EyeOutlined />} 
             size="small"
             onClick={() => {
+              // TODO: Открыть детальный просмотр
               message.info('Просмотр в разработке');
             }}
           />
@@ -189,6 +176,14 @@ const DefectList: React.FC = () => {
         </Col>
       </Row>
 
+      {/* Информация о хранилище */}
+      <Card>
+        <div className="flex items-center text-gray-600">
+          <FolderOpenOutlined className="mr-2" />
+          <span>Файлы сохранены в локальной файловой системе</span>
+        </div>
+      </Card>
+
       {/* Таблица дефектов */}
       <Card title="Сохраненные дефекты">
         <Table
@@ -210,10 +205,12 @@ const DefectList: React.FC = () => {
         width={800}
       >
         {previewImage && (
-          <img 
-            src={previewImage} 
-            alt="Дефект" 
-            style={{ width: '100%', height: 'auto' }} 
+          <Image
+            src={previewImage}
+            alt="Дефект"
+            style={{ width: '100%', height: 'auto' }}
+            preview={false}
+            fallback="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
           />
         )}
       </Modal>

@@ -1,27 +1,72 @@
 // src/features/image-upload/components/ImageUpload.tsx
-import React, { useCallback, useState, useEffect } from 'react'; // убрали useRef
-import { Upload, Button, message, Card, Space, Progress, Alert, Modal } from 'antd';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
+import { 
+  // Upload, 
+  Button, message, Card, Space, Progress, Alert, Modal, Input, Select } from 'antd';
 import { 
   UploadOutlined, 
   CameraOutlined, 
   DeleteOutlined,
   CheckCircleOutlined,
   FileImageOutlined,
-  SaveOutlined
+  SaveOutlined,
+  FolderOpenOutlined
 } from '@ant-design/icons';
 import { useImageUpload } from '../hooks/useImageUpload';
 import { useAppSelector, useAppDispatch } from '../../../app/store';
 import { clearError, setCalibration } from '../store/imageSlice';
 import ImageCanvas from './ImageCanvas';
+import { useDatabase } from '../../database/hooks/useDatabase';
+import Dragger from 'antd/es/upload/Dragger';
 
-const { Dragger } = Upload;
+const { Option } = Select;
+
+// Интерфейс для измерения
+interface MeasurementData {
+  type: string;
+  left?: number;
+  top?: number;
+  width?: number;
+  height?: number;
+  radius?: number;
+  x1?: number;
+  y1?: number;
+  x2?: number;
+  y2?: number;
+  points?: Array<{ x: number; y: number }>;
+}
 
 const ImageUpload: React.FC = () => {
   const dispatch = useAppDispatch();
   const { uploadImage, clearPreview, previewUrl } = useImageUpload();
   const { currentImage, isLoading, error } = useAppSelector(state => state.image);
+  const { saveDefect, loading: dbLoading, getStoragePath } = useDatabase();
+  
   const [uploadProgress, setUploadProgress] = useState(0);
   const [saveModalVisible, setSaveModalVisible] = useState(false);
+  const [measurements, setMeasurements] = useState<fabric.Object[]>([]);
+  
+  // Используем ref для хранения пути (не вызывает рендер)
+  // const storagePathRef = useRef<string>('');
+  
+  // Поля для ввода дополнительной информации
+  const [frameNumber, setFrameNumber] = useState<string>('');
+  const [side, setSide] = useState<'ЛБ' | 'ПБ' | undefined>(undefined);
+  const [heightFromKeel, setHeightFromKeel] = useState<number | undefined>();
+  const [defectType, setDefectType] = useState<string>('');
+  const [notes, setNotes] = useState<string>('');
+
+  const [storagePath, setStoragePath] = useState<string>('');
+
+  useEffect(() => {
+  setStoragePath(getStoragePath());
+}, [getStoragePath]); // Оставляем зависимость, так как это нужно для UI
+
+  // Получаем путь к хранилищу один раз при монтировании
+  // useEffect(() => {
+  //   storagePathRef.current = getStoragePath();
+  //   console.log('📁 Путь к хранилищу:', storagePathRef.current);
+  // }, []); // Пустой массив - выполняется один раз
 
   const handleFileUpload = useCallback(async (file: File) => {
     try {
@@ -58,16 +103,122 @@ const ImageUpload: React.FC = () => {
     message.success(`Калибровка выполнена: ${pxPerMm.toFixed(2)} px/мм`);
   }, [dispatch]);
 
-  const handleSave = useCallback(() => {
-    setSaveModalVisible(true);
+  const handleMeasurementsChange = useCallback((newMeasurements: fabric.Object[]) => {
+    setMeasurements(newMeasurements);
   }, []);
 
-  const handleConfirmSave = useCallback(() => {
-    // Здесь будет логика сохранения в БД
-    message.success('Данные сохранены в локальную базу');
-    setSaveModalVisible(false);
-    clearPreview();
-  }, [clearPreview]);
+  const handleSave = useCallback(() => {
+    if (!currentImage?.calibration) {
+      message.warning('Сначала выполните калибровку');
+      return;
+    }
+    setSaveModalVisible(true);
+  }, [currentImage]);
+
+  // Функция для безопасного преобразования измерений
+  const serializeMeasurements = useCallback((measurements: fabric.Object[]): MeasurementData[] => {
+    return measurements.map(m => {
+      const baseData: MeasurementData = {
+        type: m.type || 'unknown',
+        left: m.left,
+        top: m.top,
+      };
+
+      // В зависимости от типа объекта добавляем специфичные поля
+      if (m.type === 'rect') {
+        const rect = m as fabric.Rect;
+        return {
+          ...baseData,
+          width: rect.width,
+          height: rect.height,
+        };
+      } else if (m.type === 'circle') {
+        const circle = m as fabric.Circle;
+        return {
+          ...baseData,
+          radius: circle.radius,
+        };
+      } else if (m.type === 'line') {
+        const line = m as fabric.Line;
+        // Пробуем разные способы получения координат линии
+        const x1 = line.get('x1') ?? line.x1;
+        const y1 = line.get('y1') ?? line.y1;
+        const x2 = line.get('x2') ?? line.x2;
+        const y2 = line.get('y2') ?? line.y2;
+        
+        return {
+          ...baseData,
+          x1,
+          y1,
+          x2,
+          y2,
+        };
+      } else if (m.type === 'polygon') {
+        const polygon = m as fabric.Polygon;
+        return {
+          ...baseData,
+          points: polygon.points?.map(p => ({ x: p.x, y: p.y })),
+        };
+      }
+
+      return baseData;
+    });
+  }, []);
+
+  const handleConfirmSave = useCallback(async () => {
+    if (!currentImage || !previewUrl) return;
+
+    try {
+      // Сохраняем калибровочные точки (временно заглушка)
+      const calibrationPoints = JSON.stringify([
+        { x: 0, y: 0 },
+        { x: 100, y: 0 }
+      ]);
+
+      // Сохраняем измерения с правильной типизацией
+      const measurementsData = serializeMeasurements(measurements);
+
+      // Сохраняем в файловую систему
+      const id = await saveDefect(
+        previewUrl,
+        currentImage.fileName,
+        {
+          imageWidth: currentImage.width,
+          imageHeight: currentImage.height,
+          pxPerMm: currentImage.calibration.pxPerMm,
+          calibrationPoints,
+          measurements: JSON.stringify(measurementsData),
+          defectType: defectType || undefined,
+          frameNumber: frameNumber || undefined,
+          side: side,
+          heightFromKeel: heightFromKeel,
+          notes: notes || undefined,
+          fileName: currentImage.fileName
+        }
+      );
+      
+      message.success(`Дефект сохранен в файловую систему (ID: ${id})`);
+      
+      // Показываем путь к сохраненным файлам
+      message.info(`Файлы сохранены в: ${storagePath}`);
+      
+      setSaveModalVisible(false);
+      
+      // Сбрасываем форму
+      setFrameNumber('');
+      setSide(undefined);
+      setHeightFromKeel(undefined);
+      setDefectType('');
+      setNotes('');
+      setMeasurements([]);
+      
+      // Очищаем предпросмотр
+      clearPreview();
+    } catch (error) {
+      message.error('Ошибка при сохранении в файловую систему');
+      console.error(error);
+    }
+  }, [currentImage, previewUrl, measurements, serializeMeasurements, defectType, frameNumber, side, heightFromKeel, notes, saveDefect, clearPreview]);
 
   const handlePaste = useCallback((e: ClipboardEvent) => {
     const items = e.clipboardData?.items;
@@ -92,7 +243,7 @@ const ImageUpload: React.FC = () => {
   if (currentImage && previewUrl) {
     return (
       <div className="space-y-4">
-        {/* Модальное окно сохранения */}
+        {/* Модальное окно сохранения с дополнительными полями */}
         <Modal
           title="Сохранение измерений"
           open={saveModalVisible}
@@ -100,18 +251,81 @@ const ImageUpload: React.FC = () => {
           onCancel={() => setSaveModalVisible(false)}
           okText="Сохранить"
           cancelText="Отмена"
+          confirmLoading={dbLoading}
+          width={600}
         >
-          <div className="space-y-3">
-            <p>Будут сохранены:</p>
-            <ul className="list-disc list-inside text-sm">
-              <li>Изображение дефекта</li>
-              <li>Калибровочные данные</li>
-              <li>Все выполненные измерения</li>
-              <li>Дата и время анализа</li>
-            </ul>
-            <div className="bg-blue-50 p-3 rounded mt-2">
-              <p className="text-blue-800 text-sm">
-                ⚡ Все данные хранятся локально на вашем компьютере
+          <div className="space-y-4">
+            <div>
+              <label className="block mb-1 font-medium">Тип дефекта</label>
+              <Select
+                placeholder="Выберите тип дефекта"
+                className="w-full"
+                value={defectType}
+                onChange={setDefectType}
+                allowClear
+              >
+                <Option value="corrosion">Коррозия</Option>
+                <Option value="crack">Трещина</Option>
+                <Option value="deformation">Деформация</Option>
+                <Option value="coating">Повреждение покрытия</Option>
+              </Select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block mb-1 font-medium">Номер шпангоута</label>
+                <Input
+                  placeholder="например: 42"
+                  value={frameNumber}
+                  onChange={(e) => setFrameNumber(e.target.value)}
+                />
+              </div>
+              <div>
+                <label className="block mb-1 font-medium">Борт</label>
+                <Select
+                  placeholder="Выберите борт"
+                  className="w-full"
+                  value={side}
+                  onChange={setSide}
+                  allowClear
+                >
+                  <Option value="ЛБ">Левый борт (ЛБ)</Option>
+                  <Option value="ПБ">Правый борт (ПБ)</Option>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">Высота от КВЛ (м)</label>
+              <Input
+                type="number"
+                placeholder="опционально"
+                value={heightFromKeel}
+                onChange={(e) => setHeightFromKeel(e.target.value ? Number(e.target.value) : undefined)}
+                step={0.1}
+              />
+            </div>
+
+            <div>
+              <label className="block mb-1 font-medium">Примечания</label>
+              <Input.TextArea
+                rows={3}
+                placeholder="дополнительная информация о дефекте"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="bg-blue-50 p-3 rounded">
+              <p className="text-blue-800 text-sm flex items-center">
+                <FolderOpenOutlined className="mr-2" />
+                Файлы будут сохранены в: {storagePath}
+              </p>
+            </div>
+
+            <div className="bg-green-50 p-3 rounded">
+              <p className="text-green-800 text-sm">
+                ⚡ Будет сохранено: изображение, миниатюра, {measurements.length} измерений
               </p>
             </div>
           </div>
@@ -139,6 +353,7 @@ const ImageUpload: React.FC = () => {
             imageUrl={previewUrl} 
             onCalibrate={handleCalibration}
             onSave={handleSave}
+            onMeasurementsChange={handleMeasurementsChange}
           />
         </Card>
 
@@ -149,6 +364,11 @@ const ImageUpload: React.FC = () => {
             {currentImage.calibration && (
               <span className="ml-4">
                 ✅ Масштаб: {currentImage.calibration.pxPerMm.toFixed(2)} px/мм
+                {measurements.length > 0 && (
+                  <span className="ml-2">
+                    📊 Измерений: {measurements.length}
+                  </span>
+                )}
               </span>
             )}
           </div>
@@ -168,6 +388,7 @@ const ImageUpload: React.FC = () => {
               icon={<SaveOutlined />}
               onClick={handleSave}
               disabled={!currentImage.calibration}
+              loading={dbLoading}
             >
               {currentImage.calibration ? 'Сохранить анализ' : 'Сначала выполните калибровку'}
             </Button>
@@ -240,31 +461,14 @@ const ImageUpload: React.FC = () => {
         </Card>
       )}
 
-      {/* Недавние изображения */}
-      <Card title="Недавние загрузки" className="mt-6">
-        <div className="grid grid-cols-5 gap-4">
-          {[1,2,3,4,5].map(i => (
-            <div key={i} className="relative group cursor-pointer">
-              <div className="aspect-square bg-gray-100 rounded-lg flex items-center justify-center">
-                <FileImageOutlined className="text-2xl text-gray-400" />
-              </div>
-              <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-30 transition-all rounded-lg flex items-center justify-center">
-                <Button 
-                  size="small" 
-                  className="opacity-0 group-hover:opacity-100"
-                  onClick={() => {
-                    // Здесь будет загрузка из истории
-                    message.info('Функция загрузки из истории будет добавлена');
-                  }}
-                >
-                  Загрузить
-                </Button>
-              </div>
-              <div className="mt-1 text-xs text-gray-500 truncate">
-                Дефект-{i}.jpg
-              </div>
-            </div>
-          ))}
+      {/* Информация о хранилище */}
+      <Card className="mt-6">
+        <div className="flex items-start">
+          <FolderOpenOutlined className="text-blue-500 mt-0.5 mr-2" />
+          <div>
+            <h4 className="font-medium">Файловое хранилище:</h4>
+            <p className="text-sm text-gray-600 mt-1">{storagePath || 'Загрузка...'}</p>
+          </div>
         </div>
       </Card>
 

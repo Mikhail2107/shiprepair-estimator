@@ -1,38 +1,36 @@
+// src/features/database/hooks/useDatabase.ts
 import { useState, useCallback } from 'react';
-import
-//  DatabaseService, 
-{ DefectMeasurement } 
-from '../../../services/db/DatabaseService';
+import FileStorageService, { DefectData } from '../../../services/db/FileStorageService';
 
-// В браузерной среде we'll использовать IndexedDB или localStorage
-// Но для Electron мы можем использовать IPC
 export const useDatabase = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Временно используем localStorage для демонстрации
-  // В финальной версии заменим на IPC вызовы к Electron
-
-  const saveDefect = useCallback(async (defect: Omit<DefectMeasurement, 'id'>): Promise<number> => {
+  const saveDefect = useCallback(async (
+    imageBase64: string, 
+    fileName: string, 
+    metadata: Omit<DefectData, 'id' | 'imagePath' | 'thumbnailPath' | 'createdAt'>
+  ): Promise<number> => {
     setLoading(true);
     setError(null);
     
     try {
-      // Получаем существующие дефекты
-      const existing = localStorage.getItem('defects');
-      const defects: DefectMeasurement[] = existing ? JSON.parse(existing) : [];
+      const storage = FileStorageService.getInstance();
       
-      // Создаем новый дефект с ID
-      const newDefect: DefectMeasurement = {
-        ...defect,
-        id: Date.now(), // временно используем timestamp как ID
+      // Сохраняем изображение и получаем пути
+      const { fullPath, thumbnailPath } = await storage.saveImage(imageBase64, fileName);
+      
+      // Создаем запись о дефекте
+      const defectData = {
+        ...metadata,
+        imagePath: fullPath,
+        thumbnailPath,
+        fileName,
+        createdAt: new Date().toISOString()
       };
       
-      defects.push(newDefect);
-      localStorage.setItem('defects', JSON.stringify(defects));
-      
-      console.log('✅ Дефект сохранен в localStorage:', newDefect.id);
-      return newDefect.id;
+      const result = await storage.saveDefect(defectData);
+      return result.id;
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Ошибка сохранения';
       setError(errorMessage);
@@ -42,13 +40,13 @@ export const useDatabase = () => {
     }
   }, []);
 
-  const getAllDefects = useCallback(async (): Promise<DefectMeasurement[]> => {
+  const getAllDefects = useCallback(async (): Promise<DefectData[]> => {
     setLoading(true);
     setError(null);
     
     try {
-      const existing = localStorage.getItem('defects');
-      const defects: DefectMeasurement[] = existing ? JSON.parse(existing) : [];
+      const storage = FileStorageService.getInstance();
+      const defects = await storage.loadDefects();
       return defects.sort((a, b) => 
         new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
       );
@@ -61,25 +59,23 @@ export const useDatabase = () => {
     }
   }, []);
 
-  const getDefectById = useCallback(async (id: number): Promise<DefectMeasurement | null> => {
+  const getDefectById = useCallback(async (id: number): Promise<DefectData | null> => {
     try {
-      const defects = await getAllDefects();
-      return defects.find(d => d.id === id) || null;
+      const storage = FileStorageService.getInstance();
+      return await storage.getDefectById(id);
     } catch (err) {
       console.error('Ошибка получения дефекта:', err);
       return null;
     }
-  }, [getAllDefects]);
+  }, []);
 
   const deleteDefect = useCallback(async (id: number): Promise<boolean> => {
     setLoading(true);
     setError(null);
     
     try {
-      const defects = await getAllDefects();
-      const filtered = defects.filter(d => d.id !== id);
-      localStorage.setItem('defects', JSON.stringify(filtered));
-      return true;
+      const storage = FileStorageService.getInstance();
+      return await storage.deleteDefect(id);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Ошибка удаления';
       setError(errorMessage);
@@ -87,25 +83,22 @@ export const useDatabase = () => {
     } finally {
       setLoading(false);
     }
-  }, [getAllDefects]);
+  }, []);
 
   const getStats = useCallback(async () => {
     try {
-      const defects = await getAllDefects();
-      const total = defects.length;
-      const withFrameNumber = defects.filter(d => d.frameNumber).length;
-      const avgPxPerMm = defects.reduce((sum, d) => sum + d.pxPerMm, 0) / total || 0;
-      
-      return {
-        total,
-        withFrameNumber,
-        averagePxPerMm: Number(avgPxPerMm.toFixed(2)),
-      };
+      const storage = FileStorageService.getInstance();
+      return await storage.getStats();
     } catch (err) {
       console.error('Ошибка получения статистики:', err);
       return { total: 0, withFrameNumber: 0, averagePxPerMm: 0 };
     }
-  }, [getAllDefects]);
+  }, []);
+
+  const getStoragePath = useCallback(() => {
+    const storage = FileStorageService.getInstance();
+    return storage.getStoragePath();
+  }, []);
 
   return {
     saveDefect,
@@ -113,6 +106,7 @@ export const useDatabase = () => {
     getDefectById,
     deleteDefect,
     getStats,
+    getStoragePath,
     loading,
     error,
   };
