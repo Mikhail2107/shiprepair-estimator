@@ -1,5 +1,5 @@
 // src/features/image-upload/components/ImageUpload.tsx
-import React, { useCallback, useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect } from 'react';
 import { 
   // Upload, 
   Button, message, Card, Space, Progress, Alert, Modal, Input, Select } from 'antd';
